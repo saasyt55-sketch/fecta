@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FECTA - Next-Gen Racing Experience</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- PeerJS for WebRTC Multiplayer -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Tajawal:wght@400;700;900&display=swap');
+
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'Tajawal', sans-serif;
+        }
+
+        .font-hud {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        /* Speedometer Styles */
+        .gauge-ring {
+            stroke-dasharray: 440;
+            stroke-dashoffset: 440;
+            transition: stroke-dashoffset 0.1s linear;
+        }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .neon-border {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+        }
+
+        /* Canvas absolute positioning */
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* Controls Overlay */
+        .touch-btn {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            active: scale(0.95);
+        }
+    </style>
+</head>
+<body class="bg-black text-white overflow-hidden w-screen h-screen">
+
+    <!-- Canvas Rendering Zone -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Main Menu Overlay -->
+    <div id="main-menu" class="absolute inset-0 z-20 flex flex-col justify-between p-8 bg-gradient-to-r from-black/90 via-black/60 to-transparent">
+        <!-- Logo Header -->
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-7xl font-black italic tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-orange-400 to-yellow-300 font-hud">FECTA</h1>
+                <p class="text-gray-400 text-sm tracking-widest mt-1">FORZA STYLE ULTIMATE DRIVING EXPERIENCE</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="glass-panel px-4 py-2 rounded-full text-xs font-bold text-green-400 flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Render Server Online
+                </span>
+            </div>
+        </div>
+
+        <!-- Menu Tabs / Navigation -->
+        <div class="w-full max-w-md space-y-4 my-auto">
+            <button onclick="startGame('offline')" class="w-full py-4 px-6 glass-panel hover:bg-red-600/80 transition-all rounded-xl text-right font-bold text-xl flex items-center justify-between group border-r-4 border-red-500">
+                <span><i class="fa-solid fa-car-side ml-3 group-hover:scale-110 transition"></i> لعب فردي (Offline)</span>
+                <i class="fa-solid fa-chevron-left text-sm opacity-50"></i>
+            </button>
+
+            <button onclick="openMultiplayerModal()" class="w-full py-4 px-6 glass-panel hover:bg-blue-600/80 transition-all rounded-xl text-right font-bold text-xl flex items-center justify-between group border-r-4 border-blue-500">
+                <span><i class="fa-solid fa-globe ml-3 group-hover:scale-110 transition"></i> أونلاين جماعي (Online)</span>
+                <i class="fa-solid fa-chevron-left text-sm opacity-50"></i>
+            </button>
+
+            <button onclick="openGarage()" class="w-full py-4 px-6 glass-panel hover:bg-yellow-600/80 transition-all rounded-xl text-right font-bold text-xl flex items-center justify-between group border-r-4 border-yellow-500">
+                <span><i class="fa-solid fa-wrench ml-3 group-hover:scale-110 transition"></i> الكراج والتعديل (Garage)</span>
+                <i class="fa-solid fa-chevron-left text-sm opacity-50"></i>
+            </button>
+        </div>
+
+        <!-- Settings & Graphics Footer -->
+        <div class="flex justify-between items-end">
+            <div class="glass-panel p-4 rounded-xl flex items-center gap-6">
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">دقة الرسوميات</label>
+                    <select id="graphics-quality" class="bg-slate-800 text-sm rounded px-2 py-1 outline-none text-white border border-slate-700">
+                        <option value="high">Ultra 4K Graphics</option>
+                        <option value="medium" selected>Balanced HD</option>
+                        <option value="low">Performance</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">الصوت</label>
+                    <button onclick="toggleSound()" id="sound-btn" class="bg-slate-800 p-2 rounded text-sm text-green-400">
+                        <i class="fa-solid fa-volume-high"></i> مفعل
+                    </button>
+                </div>
+            </div>
+            <p class="text-xs text-gray-500">FECTA MOTORSPORTS v2.4 - Render Powered Edition</p>
+        </div>
+    </div>
+
+    <!-- Garage Modal -->
+    <div id="garage-modal" class="hidden absolute inset-0 z-30 glass-panel p-8 flex flex-col justify-between">
+        <div class="flex justify-between items-center">
+            <h2 class="text-3xl font-bold flex items-center gap-3"><i class="fa-solid fa-palette text-yellow-500"></i> كراج التعديل والسيارات</h2>
+            <button onclick="closeGarage()" class="px-4 py-2 bg-red-600 rounded-lg hover:bg-red-700 font-bold">حفظ وخروج</button>
+        </div>
+
+        <!-- Customization Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 my-auto">
+            <div class="glass-panel p-6 rounded-2xl space-y-4">
+                <h3 class="font-bold text-lg text-yellow-400 border-b border-gray-700 pb-2">لون السيارة</h3>
+                <div class="flex gap-3">
+                    <button onclick="changeCarColor(0xff0033)" class="w-10 h-10 rounded-full bg-red-600 border-2 border-white shadow-lg hover:scale-110 transition"></button>
+                    <button onclick="changeCarColor(0x0066ff)" class="w-10 h-10 rounded-full bg-blue-600 border-2 border-white shadow-lg hover:scale-110 transition"></button>
+                    <button onclick="changeCarColor(0x111111)" class="w-10 h-10 rounded-full bg-black border-2 border-white shadow-lg hover:scale-110 transition"></button>
+                    <button onclick="changeCarColor(0xffcc00)" class="w-10 h-10 rounded-full bg-yellow-400 border-2 border-white shadow-lg hover:scale-110 transition"></button>
+                    <button onclick="changeCarColor(0x00ffcc)" class="w-10 h-10 rounded-full bg-teal-400 border-2 border-white shadow-lg hover:scale-110 transition"></button>
+                </div>
+            </div>
+
+            <div class="glass-panel p-6 rounded-2xl space-y-4">
+                <h3 class="font-bold text-lg text-blue-400 border-b border-gray-700 pb-2">تطوير المحرك والأداء</h3>
+                <div class="space-y-3">
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><span>السرعة القصوى</span><span class="text-green-400">320 KM/H</span></div>
+                        <div class="w-full bg-gray-700 h-2 rounded-full overflow-hidden">
+                            <div class="bg-green-500 h-full" style="width: 85%"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><span>البريك والتفحيط</span><span class="text-blue-400">Pro Drift</span></div>
+                        <div class="w-full bg-gray-700 h-2 rounded-full overflow-hidden">
+                            <div class="bg-blue-500 h-full" style="width: 90%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel p-6 rounded-2xl space-y-4">
+                <h3 class="font-bold text-lg text-purple-400 border-b border-gray-700 pb-2">نوع السيارة</h3>
+                <div class="space-y-2">
+                    <button class="w-full py-2 px-4 bg-slate-800 rounded text-right hover:bg-slate-700 border border-yellow-500/50">Fecta GT Super Sport</button>
+                    <button class="w-full py-2 px-4 bg-slate-800/50 rounded text-right opacity-50 cursor-not-allowed">Fecta Apex Hypercar (قريباً)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Multiplayer Room Modal -->
+    <div id="multiplayer-modal" class="hidden absolute inset-0 z-30 glass-panel p-8 flex flex-col justify-center items-center">
+        <div class="glass-panel p-8 rounded-2xl max-w-md w-full space-y-6">
+            <h2 class="text-2xl font-bold text-center text-blue-400"><i class="fa-solid fa-users ml-2"></i> غرف اللعب الأونلاين</h2>
+            <p class="text-xs text-gray-400 text-center">قم بإنشاء غرفة للعب مع أصدقائك أو الانضمام إلى غرفة معينة عبر السيرفر</p>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs text-gray-300 block mb-1">اسم اللاعب</label>
+                    <input type="text" id="player-name" value="Driver_1" class="w-full bg-slate-800 border border-slate-700 rounded p-3 text-white focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div>
+                    <label class="text-xs text-gray-300 block mb-1">معرف الغرفة (Room ID)</label>
+                    <input type="text" id="room-id-input" placeholder="ادخل رمز الغرفة للإنضمام" class="w-full bg-slate-800 border border-slate-700 rounded p-3 text-white focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div class="flex gap-4">
+                    <button onclick="createRoom()" class="flex-1 bg-blue-600 hover:bg-blue-700 font-bold py-3 rounded-xl transition">إنشاء غرفة</button>
+                    <button onclick="joinRoom()" class="flex-1 bg-green-600 hover:bg-green-700 font-bold py-3 rounded-xl transition">إنضمام</button>
+                </div>
+            </div>
+
+            <button onclick="closeMultiplayerModal()" class="w-full py-2 text-xs text-gray-400 hover:text-white">إلغاء والعودة</button>
+        </div>
+    </div>
+
+    <!-- HUD Overlay (Game Dashboard) -->
+    <div id="game-hud" class="hidden absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-6">
+        <!-- Top HUD -->
+        <div class="flex justify-between items-start">
+            <!-- Minimap -->
+            <div class="w-36 h-36 rounded-full glass-panel border-2 border-red-500/30 relative overflow-hidden flex items-center justify-center">
+                <canvas id="minimap-canvas" class="w-full h-full"></canvas>
+                <div class="absolute w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_#ef4444]"></div>
+            </div>
+
+            <!-- Race Info & Leaderboard -->
+            <div class="glass-panel px-6 py-3 rounded-2xl flex items-center gap-8 font-hud">
+                <div>
+                    <p class="text-[10px] text-gray-400">المركز</p>
+                    <p class="text-2xl font-black text-yellow-400"><span id="hud-pos">1</span> / 4</p>
+                </div>
+                <div class="border-r border-gray-700 pr-8">
+                    <p class="text-[10px] text-gray-400">الوقت</p>
+                    <p class="text-2xl font-bold text-white" id="hud-timer">00:00.00</p>
+                </div>
+                <div class="border-r border-gray-700 pr-8">
+                    <p class="text-[10px] text-gray-400">اللفة</p>
+                    <p class="text-2xl font-bold text-blue-400"><span id="hud-lap">1</span>/3</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Alert Banner -->
+        <div id="hud-alert" class="self-center text-center opacity-0 transition-opacity">
+            <h2 class="text-4xl font-black italic tracking-widest text-yellow-400 drop-shadow-lg font-hud">DRIFT +500</h2>
+        </div>
+
+        <!-- Bottom HUD Dashboard -->
+        <div class="flex justify-between items-end">
+            <!-- Nitro Bar -->
+            <div class="glass-panel p-4 rounded-2xl w-48 space-y-2">
+                <div class="flex justify-between text-xs font-bold font-hud">
+                    <span class="text-cyan-400"><i class="fa-solid fa-bolt ml-1"></i> NITRO BOOST</span>
+                    <span id="nitro-percentage" class="text-cyan-400">100%</span>
+                </div>
+                <div class="w-full bg-slate-800 h-3 rounded-full p-0.5 overflow-hidden">
+                    <div id="nitro-bar-fill" class="bg-gradient-to-r from-cyan-500 to-blue-500 h-full rounded-full transition-all duration-75 shadow-[0_0_10px_#06b6d4]" style="width: 100%"></div>
+                </div>
+            </div>
+
+            <!-- Speedometer Cluster -->
+            <div class="relative flex items-center justify-center font-hud">
+                <svg class="w-48 h-48 transform -rotate-90">
+                    <circle cx="96" cy="96" r="70" stroke="rgba(255,255,255,0.1)" stroke-width="12" fill="none" />
+                    <circle id="speed-gauge" cx="96" cy="96" r="70" stroke="#ef4444" stroke-width="12" fill="none" class="gauge-ring" />
+                </svg>
+                <div class="absolute text-center flex flex-col items-center">
+                    <span id="hud-speed" class="text-5xl font-black italic text-white tracking-tighter">0</span>
+                    <span class="text-[10px] text-gray-400 tracking-widest uppercase mt-[-4px]">KM/H</span>
+                    <div class="mt-1 px-3 py-0.5 bg-red-600/30 border border-red-500/50 rounded text-xs font-bold text-red-400" id="hud-gear">GEAR 1</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- On-Screen Touch Controls for Mobile Devices -->
+    <div id="touch-controls" class="hidden absolute inset-0 z-20 pointer-events-none flex justify-between p-6 items-end">
+        <div class="flex gap-4 pointer-events-auto">
+            <button id="btn-left" class="touch-btn w-16 h-16 rounded-full text-2xl flex items-center justify-center text-white"><i class="fa-solid fa-arrow-left"></i></button>
+            <button id="btn-right" class="touch-btn w-16 h-16 rounded-full text-2xl flex items-center justify-center text-white"><i class="fa-solid fa-arrow-right"></i></button>
+        </div>
+        <div class="flex gap-4 pointer-events-auto">
+            <button id="btn-brake" class="touch-btn w-16 h-16 rounded-full text-2xl flex items-center justify-center text-red-400"><i class="fa-solid fa-angles-down"></i></button>
+            <button id="btn-gas" class="touch-btn w-20 h-20 bg-red-600/80 rounded-full text-3xl flex items-center justify-center text-white"><i class="fa-solid fa-gauge-high"></i></button>
+            <button id="btn-nitro" class="touch-btn w-16 h-16 bg-cyan-600/80 rounded-full text-2xl flex items-center justify-center text-white"><i class="fa-solid fa-bolt"></i></button>
+        </div>
+    </div>
+
+    <!-- JavaScript Application Code -->
+    <script>
+        /**
+         * FECTA MOTORSPORTS - Game Engine & Logic
+         */
+
+        // Game Configuration & State
+        const CONFIG = {
+            maxSpeed: 280,
+            acceleration: 0.8,
+            friction: 0.98,
+            steeringSpeed: 0.04,
+            driftFriction: 0.95
+        };
+
+        let scene, camera, renderer;
+        let playerCar, carMesh;
+        let wheels = [];
+        let trackMesh, aiCars = [];
+        let soundEnabled = true;
+        let isPlaying = false;
+        let currentMode = 'offline'; // offline or online
+
+        // Controls
+        const keys = { forward: false, backward: false, left: false, right: false, nitro: false, drift: false };
+        
+        // Car Physics Variables
+        let speed = 0;
+        let carAngle = 0;
+        let nitroAmount = 100;
+        let gear = 1;
+
+        // PeerJS / Multiplayer Variables
+        let peer = null;
+        let connections = [];
+
+        // Audio System
+        let audioCtx, engineOsc, gainNode;
+
+        // Initialize Application
+        window.onload = function() {
+            initThree();
+            setupEvents();
+            setupMobileTouch();
+            animate();
+            detectTouchDevice();
+        };
+
+        function detectTouchDevice() {
+            if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+                document.getElementById('touch-controls').classList.remove('hidden');
+            }
+        }
+
+        // --- 1. THREE.JS SCENE SETUP ---
+        function initThree() {
+            const canvas = document.getElementById('game-canvas');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0e17);
+            scene.fog = new THREE.FogExp2(0x0a0e17, 0.008);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, -10);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.DirectionalLight(0xfffaed, 1.2);
+            sunLight.position.set(100, 150, 50);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            scene.add(sunLight);
+
+            // Build World
+            createTrack();
+            playerCar = createCar(0xff0033);
+            scene.add(playerCar);
+
+            // Create AI Competitors
+            for (let i = 0; i < 3; i++) {
+                const ai = createCar(i === 0 ? 0x0066ff : (i === 1 ? 0xffcc00 : 0x111111));
+                ai.position.set((i - 1) * 4, 0, 10 + i * 5);
+                scene.add(ai);
+                aiCars.push(ai);
+            }
+
+            // Window Resize
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        // --- 2. CAR BUILDER & PROCEDURAL MESHES ---
+        function createCar(colorHex) {
+            const carGroup = new THREE.Group();
+
+            // Body Material (Metallic Forza Look)
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: colorHex,
+                metalness: 0.8,
+                roughness: 0.2,
+                clearcoat: 1.0,
+                clearcoatRoughness: 0.1
+            });
+
+            const glassMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0x111111,
+                metalness: 0.1,
+                roughness: 0.1,
+                transmission: 0.6,
+                transparent: true
+            });
+
+            // Chassis Mesh
+            const chassisGeo = new THREE.BoxGeometry(2, 0.6, 4.2);
+            const chassis = new THREE.Mesh(chassisGeo, bodyMaterial);
+            chassis.position.y = 0.5;
+            chassis.castShadow = true;
+            carGroup.add(chassis);
+
+            // Cabin / Roof Mesh
+            const cabinGeo = new THREE.BoxGeometry(1.6, 0.5, 2);
+            const cabin = new THREE.Mesh(cabinGeo, glassMaterial);
+            cabin.position.set(0, 0.9, -0.2);
+            cabin.castShadow = true;
+            carGroup.add(cabin);
+
+            // Wheels
+            const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 24);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+
+            const wheelPositions = [
+                [-1.05, 0.4, 1.3],  // Front Left
+                [1.05, 0.4, 1.3],   // Front Right
+                [-1.05, 0.4, -1.3], // Rear Left
+                [1.05, 0.4, -1.3]   // Rear Right
+            ];
+
+            wheelPositions.forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos);
+                wheel.castShadow = true;
+                carGroup.add(wheel);
+                wheels.push(wheel);
+            });
+
+            return carGroup;
+        }
+
+        // --- 3. TRACK & ENVIRONMENT ---
+        function createTrack() {
+            // Ground Grass
+            const groundGeo = new THREE.PlaneGeometry(1000, 1000);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a381e, roughness: 0.9 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Track Circuit (Asphalt Ring)
+            const trackGeo = new THREE.RingGeometry(60, 100, 64);
+            const trackMat = new THREE.MeshStandardMaterial({ color: 0x222225, roughness: 0.5 });
+            trackMesh = new THREE.Mesh(trackGeo, trackMat);
+            trackMesh.rotation.x = -Math.PI / 2;
+            trackMesh.position.y = 0.01;
+            trackMesh.receiveShadow = true;
+            scene.add(trackMesh);
+        }
+
+        // --- 4. GAME CONTROLS & PHYSICS ---
+        function setupEvents() {
+            window.addEventListener('keydown', (e) => handleKey(e, true));
+            window.addEventListener('keyup', (e) => handleKey(e, false));
+        }
+
+        function handleKey(e, isDown) {
+            switch(e.key.toLowerCase()) {
+                case 'arrowup': case 'w': keys.forward = isDown; break;
+                case 'arrowdown': case 's': keys.backward = isDown; break;
+                case 'arrowleft': case 'a': keys.left = isDown; break;
+                case 'arrowright': case 'd': keys.right = isDown; break;
+                case 'shift': keys.nitro = isDown; break;
+                case ' ': keys.drift = isDown; break;
+            }
+        }
+
+        function setupMobileTouch() {
+            const bindBtn = (id, key) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
+                el.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+            };
+            bindBtn('btn-gas', 'forward');
+            bindBtn('btn-brake', 'backward');
+            bindBtn('btn-left', 'left');
+            bindBtn('btn-right', 'right');
+            bindBtn('btn-nitro', 'nitro');
+        }
+
+        // --- 5. AUDIO SYSTEM (Web Audio API Engine Sound) ---
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            engineOsc = audioCtx.createOscillator();
+            gainNode = audioCtx.createGain();
+
+            engineOsc.type = 'sawtooth';
+            engineOsc.frequency.setValueAtTime(60, audioCtx.currentTime);
+            gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+
+            engineOsc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            engineOsc.start();
+        }
+
+        function updateAudio() {
+            if (!audioCtx || !soundEnabled) return;
+            const pitch = 60 + Math.abs(speed) * 1.2;
+            engineOsc.frequency.setTargetAtTime(pitch, audioCtx.currentTime, 0.1);
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const btn = document.getElementById('sound-btn');
+            if (soundEnabled) {
+                btn.innerHTML = `<i class="fa-solid fa-volume-high"></i> مفعل`;
+                btn.className = "bg-slate-800 p-2 rounded text-sm text-green-400";
+            } else {
+                btn.innerHTML = `<i class="fa-solid fa-volume-xmark"></i> معطل`;
+                btn.className = "bg-slate-800 p-2 rounded text-sm text-red-400";
+                if (gainNode) gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+            }
+        }
+
+        // --- 6. MAIN GAME LOOP & PHYSICS ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isPlaying) {
+                updatePhysics();
+                updateCamera();
+                updateHUD();
+                updateAudio();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function updatePhysics() {
+            // Acceleration & Braking
+            let currentAccel = CONFIG.acceleration;
+
+            if (keys.nitro && nitroAmount > 0) {
+                currentAccel *= 2.2;
+                nitroAmount = Math.max(0, nitroAmount - 0.8);
+            } else if (nitroAmount < 100) {
+                nitroAmount = Math.min(100, nitroAmount + 0.1);
+            }
+
+            if (keys.forward) speed += currentAccel;
+            if (keys.backward) speed -= currentAccel * 0.6;
+
+            // Friction & Speed Limit
+            speed *= CONFIG.friction;
+            speed = Math.max(-CONFIG.maxSpeed / 4, Math.min(CONFIG.maxSpeed, speed));
+
+            // Steering
+            if (Math.abs(speed) > 0.1) {
+                const dir = speed > 0 ? 1 : -1;
+                if (keys.left) carAngle += CONFIG.steeringSpeed * dir;
+                if (keys.right) carAngle -= CONFIG.steeringSpeed * dir;
+            }
+
+            // Position Update
+            playerCar.rotation.y = carAngle;
+            playerCar.position.x += Math.sin(carAngle) * (speed * 0.05);
+            playerCar.position.z += Math.cos(carAngle) * (speed * 0.05);
+
+            // Wheel Rotation
+            wheels.forEach(w => w.rotation.x += speed * 0.05);
+        }
+
+        function updateCamera() {
+            // Smooth Camera Follow
+            const relativeOffset = new THREE.Vector3(0, 3, -8);
+            const cameraOffset = relativeOffset.applyMatrix4(playerCar.matrixWorld);
+
+            camera.position.x += (cameraOffset.x - camera.position.x) * 0.1;
+            camera.position.y += (cameraOffset.y - camera.position.y) * 0.1;
+            camera.position.z += (cameraOffset.z - camera.position.z) * 0.1;
+
+            camera.lookAt(playerCar.position.x, playerCar.position.y + 1, playerCar.position.z);
+        }
+
+        // --- 7. HUD UPDATES ---
+        function updateHUD() {
+            const currentSpeed = Math.floor(Math.abs(speed));
+            document.getElementById('hud-speed').innerText = currentSpeed;
+
+            // Speedometer Gauge Offset
+            const gauge = document.getElementById('speed-gauge');
+            const maxOffset = 440;
+            const val = maxOffset - (currentSpeed / CONFIG.maxSpeed) * (maxOffset - 100);
+            gauge.style.strokeDashoffset = val;
+
+            // Gear Calculation
+            gear = Math.min(6, Math.floor(currentSpeed / 45) + 1);
+            document.getElementById('hud-gear').innerText = `GEAR ${gear}`;
+
+            // Nitro Fill
+            document.getElementById('nitro-bar-fill').style.width = `${nitroAmount}%`;
+            document.getElementById('nitro-percentage').innerText = `${Math.floor(nitroAmount)}%`;
+        }
+
+        // --- 8. GARAGE & UI HANDLERS ---
+        function openGarage() {
+            document.getElementById('garage-modal').classList.remove('hidden');
+        }
+
+        function closeGarage() {
+            document.getElementById('garage-modal').classList.add('hidden');
+        }
+
+        function changeCarColor(hex) {
+            playerCar.children[0].material.color.setHex(hex);
+        }
+
+        function startGame(mode) {
+            currentMode = mode;
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('game-hud').classList.remove('hidden');
+            isPlaying = true;
+            initAudio();
+        }
+
+        // --- 9. MULTIPLAYER SYSTEM (PeerJS WebRTC) ---
+        function openMultiplayerModal() {
+            document.getElementById('multiplayer-modal').classList.remove('hidden');
+        }
+
+        function closeMultiplayerModal() {
+            document.getElementById('multiplayer-modal').classList.add('hidden');
+        }
+
+        function createRoom() {
+            peer = new Peer();
+            peer.on('open', (id) => {
+                alert('تم إنشاء الغرفة بنجاح! رمز الغرفة الخاص بك هو:\n' + id);
+                closeMultiplayerModal();
+                startGame('online');
+            });
+
+            peer.on('connection', (conn) => {
+                connections.push(conn);
+                setupDataConnection(conn);
+            });
+        }
+
+        function joinRoom() {
+            const roomId = document.getElementById('room-id-input').value.trim();
+            if (!roomId) {
+                alert('الرجاء إدخال رمز الغرفة للإنضمام!');
+                return;
+            }
+
+            peer = new Peer();
+            peer.on('open', () => {
+                const conn = peer.connect(roomId);
+                connections.push(conn);
+                setupDataConnection(conn);
+                closeMultiplayerModal();
+                startGame('online');
+            });
+        }
+
+        function setupDataConnection(conn) {
+            conn.on('data', (data) => {
+                // Sync multiplayer opponents position
+                console.log('Received multiplayer data:', data);
+            });
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
